@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StockfishEngine } from "./engine/stockfish";
 import { Chess, type Square } from "chess.js";
 import {
@@ -52,7 +52,7 @@ import {
 } from "./game/relicEffects";
 import { RELICS } from "./data/relics";
 import HowToPlay from "./components/HowToPlay";
-import GemmaLabModal from "./components/GemmaLabModal.tsx";
+import GemmaLabView from "./components/GemmaLabView.tsx";
 import { ChessPiece } from "./components/ChessPiece";
 import "./App.css";
 
@@ -161,8 +161,55 @@ export default function App() {
     }
   });
 
-  // Developer & Judge Gemma Lab Inspector modal
-  const [showGemmaLab, setShowGemmaLab] = useState<boolean>(false);
+  // Active application view: dedicated 'game' view or 'gemma-lab' evaluation inspector.
+  // Supports #lab hash for direct linking/bookmarking by judges and browser automation.
+  const [activeView, setActiveView] = useState<"game" | "gemma-lab">(() => {
+    try {
+      if (typeof window !== "undefined" && window.location.hash.toLowerCase() === "#lab") {
+        return "gemma-lab";
+      }
+    } catch {
+      // ignore
+    }
+    return "game";
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      try {
+        if (window.location.hash.toLowerCase() === "#lab") {
+          setActiveView("gemma-lab");
+        } else if (
+          window.location.hash === "" ||
+          window.location.hash === "#" ||
+          window.location.hash.toLowerCase() === "#game"
+        ) {
+          setActiveView("game");
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  const switchView = useCallback((view: "game" | "gemma-lab") => {
+    setActiveView(view);
+    try {
+      if (view === "gemma-lab") {
+        if (window.location.hash.toLowerCase() !== "#lab") {
+          window.location.hash = "lab";
+        }
+      } else {
+        if (window.location.hash) {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   function dismissHelp() {
     try {
@@ -810,19 +857,38 @@ export default function App() {
   return (
     <div className="app-shell">
       {showHelp && <HowToPlay onClose={dismissHelp} />}
-      {showGemmaLab && <GemmaLabModal onClose={() => setShowGemmaLab(false)} />}
 
       <header className="topbar">
-        <div className="brand">
+        <div
+          className="brand"
+          onClick={() => switchView("game")}
+          style={{ cursor: "pointer" }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") switchView("game");
+          }}
+          aria-label="Checkmate Rogue - Return to Game"
+        >
           <Crown size={27} />
           <span>CHECKMATE <strong>ROGUE</strong></span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {activeView === "gemma-lab" && (
+            <button
+              type="button"
+              className="back-to-game-btn"
+              onClick={() => switchView("game")}
+              aria-label="Back to Chess Game"
+            >
+              ← Back to Game
+            </button>
+          )}
           <button
             type="button"
             id="gemma-lab-btn"
-            className="help-btn gemma-lab-btn"
-            onClick={() => setShowGemmaLab(true)}
+            className={`help-btn gemma-lab-btn ${activeView === "gemma-lab" ? "active" : ""}`}
+            onClick={() => switchView(activeView === "gemma-lab" ? "game" : "gemma-lab")}
             aria-label="Gemma 2 Benchmark Lab & AI Inspector"
             title="Gemma 2 Benchmark Lab & AI Inspector"
           >
@@ -843,7 +909,10 @@ export default function App() {
         </div>
       </header>
 
-      <main className="game-layout">
+      <main
+        className="game-layout"
+        style={{ display: activeView === "game" ? undefined : "none" }}
+      >
 
         <aside className="panel campaign-panel">
           <div className="eyebrow">THE CAMPAIGN</div>
@@ -1220,8 +1289,13 @@ export default function App() {
         </aside>
       </main>
 
+      {/* ── Gemma Lab dedicated full-width view ───────────────────────── */}
+      {activeView === "gemma-lab" && (
+        <GemmaLabView onBackToGame={() => switchView("game")} />
+      )}
+
       {/* ── Victory: Relic reward popup ────────────────────────────────── */}
-      {showRelicChoice && campaign.status === "active" && (
+      {activeView === "game" && showRelicChoice && campaign.status === "active" && (
         <div className="relic-overlay" role="dialog" aria-modal="true" aria-labelledby="relic-modal-title">
           <section className="relic-modal">
             <p className="eyebrow">VICTORY REWARD</p>
@@ -1287,7 +1361,7 @@ export default function App() {
       )}
 
       {/* ── Draw result popup ─────────────────────────────────────────── */}
-      {showDrawResult && (
+      {activeView === "game" && showDrawResult && (
         <div className="relic-overlay" role="dialog" aria-modal="true" aria-labelledby="draw-modal-title">
           <section className="relic-modal result-modal">
             <p className="eyebrow">ENCOUNTER RESULT</p>
@@ -1309,7 +1383,7 @@ export default function App() {
       )}
 
       {/* ── Loss result popup ─────────────────────────────────────────── */}
-      {showLossResult && campaign.status === "active" && (
+      {activeView === "game" && showLossResult && campaign.status === "active" && (
         <div className="relic-overlay" role="dialog" aria-modal="true" aria-labelledby="loss-modal-title">
           <section className="relic-modal result-modal">
             <p className="eyebrow">ENCOUNTER RESULT</p>
@@ -1331,7 +1405,7 @@ export default function App() {
       )}
 
       {/* ── Campaign end screen (victory or defeat) ───────────────────── */}
-      {campaign.status !== "active" && (
+      {activeView === "game" && campaign.status !== "active" && (
         <div className="relic-overlay" role="dialog" aria-modal="true" aria-labelledby="end-modal-title">
           <section className="relic-modal result-modal">
             <p className="eyebrow">RUN COMPLETE</p>
