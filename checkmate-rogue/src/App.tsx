@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   HelpCircle,
   AlertTriangle,
+  Sparkles,
 } from "lucide-react";
 import {
   createCampaign,
@@ -51,6 +52,7 @@ import {
 } from "./game/relicEffects";
 import { RELICS } from "./data/relics";
 import HowToPlay from "./components/HowToPlay";
+import GemmaLabModal from "./components/GemmaLabModal.tsx";
 import { ChessPiece } from "./components/ChessPiece";
 import "./App.css";
 
@@ -158,6 +160,9 @@ export default function App() {
       return true;
     }
   });
+
+  // Developer & Judge Gemma Lab Inspector modal
+  const [showGemmaLab, setShowGemmaLab] = useState<boolean>(false);
 
   function dismissHelp() {
     try {
@@ -805,6 +810,7 @@ export default function App() {
   return (
     <div className="app-shell">
       {showHelp && <HowToPlay onClose={dismissHelp} />}
+      {showGemmaLab && <GemmaLabModal onClose={() => setShowGemmaLab(false)} />}
 
       <header className="topbar">
         <div className="brand">
@@ -812,6 +818,17 @@ export default function App() {
           <span>CHECKMATE <strong>ROGUE</strong></span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button
+            type="button"
+            id="gemma-lab-btn"
+            className="help-btn gemma-lab-btn"
+            onClick={() => setShowGemmaLab(true)}
+            aria-label="Gemma 2 Benchmark Lab & AI Inspector"
+            title="Gemma 2 Benchmark Lab & AI Inspector"
+          >
+            <Sparkles size={16} />
+            <span className="help-btn-label">Gemma Lab</span>
+          </button>
           <button
             type="button"
             className="help-btn"

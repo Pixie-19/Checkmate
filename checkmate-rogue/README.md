@@ -12,7 +12,7 @@ A gothic chess roguelike where your opponents don't just challenge your moves �
 [![Stockfish](https://img.shields.io/badge/Stockfish_19-Lite_WASM-365314)](https://stockfishchess.org/)
 [![Google Gemma](https://img.shields.io/badge/Google_Gemma-2_2B-4285F4?logo=google&logoColor=white)](https://ai.google.dev/gemma)
 [![Ollama](https://img.shields.io/badge/Ollama-Local_Inference-black?logo=ollama&logoColor=white)](https://ollama.com/)
-[![Vitest](https://img.shields.io/badge/Vitest-88_Passing-729B1B?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-111_Passing-729B1B?logo=vitest&logoColor=white)](https://vitest.dev/)
 
 ---
 
@@ -26,6 +26,9 @@ A gothic chess roguelike where your opponents don't just challenge your moves �
 
 Checkmate Rogue was submitted for the **Best Use of Gemma** category in the Hacktoberfest 2026 Open-Source AI Challenge.
 
+> 📊 **Empirical Quality Report**: We built an automated benchmark suite (`npm run eval:gemma`) evaluating 16 legal chess scenarios against local `gemma2:2b`.
+> Read the complete findings in **[docs/GEMMA_EVALUATION.md](docs/GEMMA_EVALUATION.md)** (**100% schema valid**, **87.5% grounded**, **93.8% hallucination-free**, **1,537ms mean latency**).
+
 | Evaluation Metric | Checkmate Rogue Implementation |
 |---|---|
 | **Model Used** | `gemma2:2b` (Google's open-weight language model) via local [Ollama](https://ollama.com/) |
@@ -34,6 +37,7 @@ Checkmate Rogue was submitted for the **Best Use of Gemma** category in the Hack
 | **Structured Output** | Strict JSON schema enforcement (`{ observation, taunt, tip }`) validated by runtime length and content guards |
 | **Gameplay Separation** | Generative AI is strictly decoupled from move calculation: Stockfish 19 Lite WASM decides moves; Gemma provides psychological atmosphere |
 | **Graceful Fallback** | Honest, seamless fallback to offline deterministic script templates if Ollama is uninstalled, sleeping, or times out (>4000ms) |
+| **Interactive Inspector** | In-app **Gemma Lab** modal for judges to test scenarios, inspect payloads, and measure live inference |
 
 ---
 
@@ -209,10 +213,10 @@ export interface BehaviorInsight {
 
 ## 🎭 From Chess Moves to Rival Personality
 
-Here is an illustrative example of how real board actions transform into Gemma-generated dialogue:
+Here is a genuine captured example from our automated evaluation harness (`npm run eval:gemma`, Scenario SCN-01) demonstrating how physical board moves transform into Gemma-generated dialogue:
 
-### 1. Board Scenario
-The player opens with `1. e4`, and on move 2 immediately lunges with `2. Qh5` (Wayward Queen Attack), followed by `3. Qf3`, while their king remains uncastled on `e1`.
+### 1. Board Scenario (SCN-01)
+The player opens with `1. e4`, and on move 2 immediately lunges with `2. Qh5` (Wayward Queen Attack), followed by `3. Bc4` and `4. d3`, neglecting minor piece development.
 
 ### 2. Extracted Behavior Payload
 ```json
@@ -221,26 +225,25 @@ The player opens with `1. e4`, and on move 2 immediately lunges with `2. Qh5` (W
   "difficulty": "apprentice",
   "encounterPhase": "opening",
   "playerMoveCount": 4,
-  "lastPlayerMove": "Qf3",
+  "lastPlayerMove": "d3",
   "isCheck": false,
   "outcome": "ongoing",
   "observedHabits": [
-    "Early Queen Development: Developed the queen early in the opening phase before completing minor piece development. (evidence: Queen to h5 on move 2 (Qh5); Queen to f3 on move 3 (Qf3))",
-    "Repeated Piece Movement: Moved the same Queen 2 times during the opening phase. (evidence: Queen moved 2 times in opening: Qh5 (move 2), Qf3 (move 3))"
+    "Early Queen Development: Developed the queen early in the opening phase before completing minor piece development. (evidence: Queen to h5 on move 2 (Qh5))"
   ]
 }
 ```
 
-### 3. Gemma 2 Generated Response
+### 3. Real Gemma 2 (2B) Captured Output (1,463ms)
 ```json
 {
-  "observation": "You summon your sovereign lady into the fray before your knights have even drawn their steel.",
-  "taunt": "A queen without an army is merely a hostage awaiting capture.",
-  "tip": "Restrain your royalty in the opening. Develop your knights and bishops first to build a true fortress."
+  "observation": "Her Queen lingers, as if trapped within a gilded cage, mirroring the echoes of her past ambitions.",
+  "taunt": "Trapped by your own predictability, child. A Queen caged by her own early ambitions.",
+  "tip": "Remember, even the strongest pieces are vulnerable. A well-placed Pawn can challenge the Queen's reign."
 }
 ```
 
-*(Note: Dialogue varies organically across runs based on rival persona, temperature, and specific habit combinations).*
+> **Verified Benchmark Evidence**: See [docs/GEMMA_EVALUATION.md](docs/GEMMA_EVALUATION.md) for full benchmark results across all 16 scenarios, including multi-habit compound scenarios, delayed castling, and boss encounters.
 
 ---
 
@@ -363,11 +366,15 @@ For public web deployments seeking cloud-driven Gemma inference, a recommended a
 
 ---
 
-## 📸 Screenshots
+## 📸 Screenshots & Demonstrations
 
 | Gothic Chessboard & Rivals | First-Run Challenger Codex |
 |---|---|
 | ![Gameplay](docs/screenshots/gameplay.png) | ![How to Play](docs/screenshots/how-to-play.png) |
+
+| Gemma 2 2B — Rival Intelligence Inspector (In-App Benchmark Lab) |
+|---|
+| ![Gemma Lab Inspector](docs/screenshots/gemma-lab.png) |
 
 ---
 
@@ -415,26 +422,28 @@ checkmate-rogue/
 
 ## 🧪 Tests and Verification
 
-Checkmate Rogue includes an automated test suite with **88 unit and integration tests** across 5 test suites:
+Checkmate Rogue includes an automated test suite with **111 unit and integration tests** across 6 test suites:
 
 ```bash
 npm test -- --run
 ```
 
 ```text
+ ✓ src/engine/stockfish.test.ts (11 tests)
  ✓ src/game/campaign.test.ts (24 tests)
  ✓ src/game/relicEffects.test.ts (22 tests)
- ✓ src/engine/stockfish.test.ts (11 tests)
  ✓ src/ai/dialogueProvider.test.ts (14 tests)
  ✓ src/ai/playerBehavior.test.ts (17 tests)
+ ✓ src/ai/eval/evaluationDataset.test.ts (23 tests)
 
- Test Files  5 passed (5)
-      Tests  88 passed (88)
-   Duration  438ms
+ Test Files  6 passed (6)
+      Tests  111 passed (111)
+   Duration  541ms
 ```
 
 ### Test Suite Coverage
 - **Engine Safety**: Worker initialization, timeout cancellation, React StrictMode double-mount disposal, and recovery after worker failure.
+- **Evaluation Dataset**: Replay legality in chess.js, habit detection across 16 scenarios, and automated quality metrics.
 - **Behavior Analytics**: Correct detection of early queen development, repeated piece moves, castling timing, pawn density, and check frequency.
 - **Dialogue Validation**: Strict schema validation, character length clamping, JSON parsing resilience, and transparent fallback behavior.
 - **Relic Logic**: Knight's Echo undo validity, Fortress Pact defensive search, and Oracle's Debt difficulty escalation.

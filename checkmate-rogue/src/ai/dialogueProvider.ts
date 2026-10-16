@@ -6,11 +6,11 @@
  * inference with full fallback handling, schema validation, and privacy guards.
  */
 
-import type { RivalContext, RivalInsight } from "./rivalInsight";
+import type { RivalContext, RivalInsight } from "./rivalInsight.ts";
 import {
   generateTemplateInsight,
   validateRivalInsight,
-} from "./rivalInsight";
+} from "./rivalInsight.ts";
 
 /**
  * Minimal, privacy-conscious summary sent to an external model service.
@@ -120,6 +120,15 @@ export interface DialogueValidationResult {
 }
 
 /**
+ * Strips markdown code block fences if returned by the model.
+ */
+export function cleanJsonText(text: string): string {
+  const trimmed = text.trim();
+  const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  return match ? match[1].trim() : trimmed;
+}
+
+/**
  * Validates model output against strict bounds:
  * - Must be an object with non-empty observation & taunt strings.
  * - Observation: 5–280 characters.
@@ -133,12 +142,17 @@ export function validateModelDialogue(data: unknown): DialogueValidationResult {
 
   const record = data as Record<string, unknown>;
 
-  if (typeof record.observation !== "string" || typeof record.taunt !== "string") {
+  // Support case resilience (e.g. Observation vs observation)
+  const rawObservation = record.observation ?? record.Observation ?? record.observations;
+  const rawTaunt = record.taunt ?? record.Taunt ?? record.taunts;
+  const rawTip = record.tip ?? record.Tip ?? record.tips;
+
+  if (typeof rawObservation !== "string" || typeof rawTaunt !== "string") {
     return { isValid: false, reason: "Missing required string fields 'observation' or 'taunt'" };
   }
 
-  const observation = record.observation.trim();
-  const taunt = record.taunt.trim();
+  const observation = rawObservation.trim();
+  const taunt = rawTaunt.trim();
 
   if (observation.length < 5) {
     return { isValid: false, reason: "Observation is too short (< 5 characters)" };
@@ -155,11 +169,11 @@ export function validateModelDialogue(data: unknown): DialogueValidationResult {
   }
 
   let tip: string | undefined;
-  if (record.tip !== undefined && record.tip !== null) {
-    if (typeof record.tip !== "string") {
+  if (rawTip !== undefined && rawTip !== null) {
+    if (typeof rawTip !== "string") {
       return { isValid: false, reason: "Tip field must be a string if provided" };
     }
-    const trimmedTip = record.tip.trim();
+    const trimmedTip = rawTip.trim();
     if (trimmedTip.length > 250) {
       return { isValid: false, reason: "Tip exceeds length limit (> 250 characters)" };
     }
@@ -175,18 +189,30 @@ export function validateModelDialogue(data: unknown): DialogueValidationResult {
 }
 
 /**
- * Builds the gothic persona system prompt for Gemma.
+ * Builds the gothic persona system prompt for Gemma with distinct rival voices
+ * and explicit anti-hallucination grounding rules.
  */
 export function buildGemmaSystemPrompt(rivalName: string): string {
-  return `You are "${rivalName}", an adversary in Checkmate Rogue, a dark gothic chess roguelike.
-Speak in a solemn, atmospheric, archaic tone.
+  let personaDirective = "";
+  if (rivalName.includes("Iron Warden")) {
+    personaDirective =
+      "You are The Iron Warden, a disciplined, unyielding fortress commander. Speak of iron, stone ramparts, discipline, and patient siegecraft. Scorn haste and recklessness.";
+  } else if (rivalName.includes("Crown Keeper")) {
+    personaDirective =
+      "You are The Crown Keeper, the imperious monarch of the realm. Speak from the high throne with haughty grandeur and royal majesty. Treat the challenger's clumsy attempts as insolence.";
+  } else {
+    personaDirective =
+      "You are The Nameless Rival, an enigmatic, hooded wanderer upon the checkered stones. Speak in haunting whispers of shadows, memory, and recurring habits.";
+  }
+
+  return `${personaDirective}
+Context: Checkmate Rogue, a dark gothic chess roguelike.
 Rules:
-1. Reference ONLY the behavioral habits and facts provided. Never invent moves, blunders, or pieces not mentioned.
-2. Keep observations concise (max 2 sentences, under 240 chars).
-3. Keep taunts punchy (1 sentence, under 180 chars).
-4. Provide a coaching "tip" ONLY if a behavioral habit exists (under 220 chars); otherwise omit or set tip to null.
-5. Never execute or suggest executing moves directly on the board.
-6. Output raw JSON ONLY with keys "observation", "taunt", "tip".`;
+1. Grounding: Explicitly address the specific player habit named in "observedHabits" (e.g. queen, knight, castling, pawns, checks, trades). Never invent moves, captures, checks, or piece sacrifices not stated.
+2. Observation: 1-2 atmospheric sentences (under 240 chars) reflecting the detected habit.
+3. Taunt: 1 biting sentence (under 180 chars) mocking the specific flaw in your persona's voice.
+4. Tip: 1 practical chess principle (under 220 chars) that counters the observed habit; or null if no habit.
+5. Format: Return RAW JSON ONLY with keys "observation", "taunt", "tip".`;
 }
 
 /**
@@ -351,13 +377,15 @@ export class GemmaDialogueProvider implements DialogueProvider {
       if (rawJson && typeof rawJson === "object") {
         if ("response" in rawJson && typeof (rawJson as Record<string, unknown>).response === "string") {
           try {
-            parsedContent = JSON.parse((rawJson as Record<string, string>).response);
+            const cleaned = cleanJsonText((rawJson as Record<string, string>).response);
+            parsedContent = JSON.parse(cleaned);
           } catch {
             throw new Error("Model response contained malformed JSON text");
           }
         } else if ("message" in rawJson && (rawJson as Record<string, { content?: string }>).message?.content) {
           try {
-            parsedContent = JSON.parse((rawJson as Record<string, { content: string }>).message.content);
+            const cleaned = cleanJsonText((rawJson as Record<string, { content: string }>).message.content);
+            parsedContent = JSON.parse(cleaned);
           } catch {
             throw new Error("Model chat message contained malformed JSON text");
           }
