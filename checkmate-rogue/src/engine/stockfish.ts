@@ -122,96 +122,97 @@ export class StockfishEngine {
       return Promise.reject(new Error("Engine disposed"));
     }
 
-    this.initializing = new Promise<void>(async (resolve, reject) => {
+    this.initializing = new Promise<void>((resolve, reject) => {
       this.initReject = reject;
       let cleanupBlob: (() => void) | undefined;
 
-      try {
-        const { worker, cleanup } = await createStockfishWorker();
-        if (this.isDisposed) {
-          cleanup?.();
-          worker.terminate();
-          reject(new Error("Engine disposed"));
-          return;
-        }
-
-        cleanupBlob = cleanup;
-        this.workerCleanup = cleanup || null;
-        this.worker = worker;
-
-        this.initTimeoutId = setTimeout(() => {
-          this.cleanupInit();
-          this.terminateWorker();
-          this.initializing = null;
-          reject(new Error("Stockfish initialization timed out"));
-        }, 15000);
-
-        this.worker.onmessage = (event: MessageEvent) => {
-          const lines = String(event.data).split("\n");
-
-          for (const rawLine of lines) {
-            const line = rawLine.trim();
-
-            if (line === "uciok") {
-              this.worker?.postMessage("isready");
-            }
-
-            if (line === "readyok" && !this.ready) {
-              this.ready = true;
-              this.cleanupInit();
-              resolve();
-            }
-
-            if (line.startsWith("bestmove") && this.pending) {
-              const move = line.split(" ")[1];
-              this.pending.resolve(
-                move && move !== "(none)" ? move : null
-              );
-              this.pending = null;
-            }
+      createStockfishWorker()
+        .then(({ worker, cleanup }) => {
+          if (this.isDisposed) {
+            cleanup?.();
+            worker.terminate();
+            reject(new Error("Engine disposed"));
+            return;
           }
-        };
 
-        this.worker.onerror = (event: ErrorEvent) => {
-          if (import.meta.env?.DEV) {
-            const { targetUrl } = getEngineUrls();
-            console.error("[Stockfish Worker Error]", {
-              message: event?.message,
-              filename: event?.filename,
-              lineno: event?.lineno,
-              colno: event?.colno,
-              error: event?.error,
-              targetUrl,
-              stage: "worker_onerror",
-            });
-          }
+          cleanupBlob = cleanup;
+          this.workerCleanup = cleanup || null;
+          this.worker = worker;
+
+          this.initTimeoutId = setTimeout(() => {
+            this.cleanupInit();
+            this.terminateWorker();
+            this.initializing = null;
+            reject(new Error("Stockfish initialization timed out"));
+          }, 15000);
+
+          this.worker.onmessage = (event: MessageEvent) => {
+            const lines = String(event.data).split("\n");
+
+            for (const rawLine of lines) {
+              const line = rawLine.trim();
+
+              if (line === "uciok") {
+                this.worker?.postMessage("isready");
+              }
+
+              if (line === "readyok" && !this.ready) {
+                this.ready = true;
+                this.cleanupInit();
+                resolve();
+              }
+
+              if (line.startsWith("bestmove") && this.pending) {
+                const move = line.split(" ")[1];
+                this.pending.resolve(
+                  move && move !== "(none)" ? move : null
+                );
+                this.pending = null;
+              }
+            }
+          };
+
+          this.worker.onerror = (event: ErrorEvent) => {
+            if (import.meta.env?.DEV) {
+              const { targetUrl } = getEngineUrls();
+              console.error("[Stockfish Worker Error]", {
+                message: event?.message,
+                filename: event?.filename,
+                lineno: event?.lineno,
+                colno: event?.colno,
+                error: event?.error,
+                targetUrl,
+                stage: "worker_onerror",
+              });
+            }
+            this.cleanupInit();
+            this.terminateWorker();
+            this.initializing = null;
+            const details = [
+              event?.message,
+              event?.filename ? `at ${event.filename}:${event.lineno}:${event.colno}` : null,
+            ]
+              .filter(Boolean)
+              .join(" ");
+            const msg = details || "Stockfish worker failed";
+            reject(new Error(`Stockfish worker failed: ${msg}`));
+          };
+
+          this.worker.onmessageerror = () => {
+            this.cleanupInit();
+            this.terminateWorker();
+            this.initializing = null;
+            reject(new Error("Stockfish worker message deserialization error"));
+          };
+
+          this.worker.postMessage("uci");
+        })
+        .catch((error) => {
+          cleanupBlob?.();
           this.cleanupInit();
-          this.terminateWorker();
           this.initializing = null;
-          const details = [
-            event?.message,
-            event?.filename ? `at ${event.filename}:${event.lineno}:${event.colno}` : null,
-          ]
-            .filter(Boolean)
-            .join(" ");
-          const msg = details || "Stockfish worker failed";
-          reject(new Error(`Stockfish worker failed: ${msg}`));
-        };
-
-        this.worker.onmessageerror = () => {
-          this.cleanupInit();
-          this.terminateWorker();
-          this.initializing = null;
-          reject(new Error("Stockfish worker message deserialization error"));
-        };
-
-        this.worker.postMessage("uci");
-      } catch (error) {
-        cleanupBlob?.();
-        this.cleanupInit();
-        this.initializing = null;
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
+          reject(error instanceof Error ? error : new Error(String(error)));
+        });
     });
 
     return this.initializing;

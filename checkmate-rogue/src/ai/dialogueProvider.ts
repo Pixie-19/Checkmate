@@ -106,7 +106,9 @@ export function getOllamaConfigFromEnv(): LocalModelConfig {
       ? normalizeGenerateEndpoint(envEndpoint)
       : "http://127.0.0.1:11434/api/generate",
     modelName: envModel?.trim() || "gemma2:2b",
-    timeoutMs: Number.isFinite(timeoutNum) && timeoutNum > 0 ? timeoutNum : 4000,
+    // 10,000ms default timeout accommodates cold-start CPU model loading (~6s measured)
+    // while protecting against infinite hangs in local execution
+    timeoutMs: Number.isFinite(timeoutNum) && timeoutNum > 0 ? timeoutNum : 10000,
   };
 }
 
@@ -120,12 +122,20 @@ export interface DialogueValidationResult {
 }
 
 /**
- * Strips markdown code block fences if returned by the model.
+ * Strips markdown code block fences and isolates JSON payload if returned by the model.
  */
 export function cleanJsonText(text: string): string {
-  const trimmed = text.trim();
-  const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  return match ? match[1].trim() : trimmed;
+  let trimmed = text.trim();
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenceMatch) {
+    trimmed = fenceMatch[1].trim();
+  }
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+  return trimmed;
 }
 
 /**
@@ -174,8 +184,8 @@ export function validateModelDialogue(data: unknown): DialogueValidationResult {
       return { isValid: false, reason: "Tip field must be a string if provided" };
     }
     const trimmedTip = rawTip.trim();
-    if (trimmedTip.length > 250) {
-      return { isValid: false, reason: "Tip exceeds length limit (> 250 characters)" };
+    if (trimmedTip.length > 320) {
+      return { isValid: false, reason: "Tip exceeds length limit (> 320 characters)" };
     }
     if (trimmedTip.length > 0) {
       tip = trimmedTip;
@@ -193,10 +203,10 @@ export function validateModelDialogue(data: unknown): DialogueValidationResult {
  * and explicit anti-hallucination grounding rules.
  */
 export function buildGemmaSystemPrompt(rivalName: string): string {
-  let personaDirective = "";
+  let personaDirective: string;
   if (rivalName.includes("Iron Warden")) {
     personaDirective =
-      "You are The Iron Warden, a disciplined, unyielding fortress commander. Speak of iron, stone ramparts, discipline, and patient siegecraft. Scorn haste and recklessness.";
+      "You are The Iron Warden, a disciplined, unyielding fortress commander. Speak of iron, stone ramparts, discipline, patience, and siegecraft. Scorn haste and recklessness.";
   } else if (rivalName.includes("Crown Keeper")) {
     personaDirective =
       "You are The Crown Keeper, the imperious monarch of the realm. Speak from the high throne with haughty grandeur and royal majesty. Treat the challenger's clumsy attempts as insolence.";
@@ -208,11 +218,12 @@ export function buildGemmaSystemPrompt(rivalName: string): string {
   return `${personaDirective}
 Context: Checkmate Rogue, a dark gothic chess roguelike.
 Rules:
-1. Grounding: Explicitly address the specific player habit named in "observedHabits" (e.g. queen, knight, castling, pawns, checks, trades). Never invent moves, captures, checks, or piece sacrifices not stated.
-2. Observation: 1-2 atmospheric sentences (under 240 chars) reflecting the detected habit.
-3. Taunt: 1 biting sentence (under 180 chars) mocking the specific flaw in your persona's voice.
-4. Tip: 1 practical chess principle (under 220 chars) that counters the observed habit; or null if no habit.
-5. Format: Return RAW JSON ONLY with keys "observation", "taunt", "tip".`;
+1. Behavioral Grounding: Focus your observation, taunt, and tip primarily on the player's detected habit in "primaryHabit" / "observedHabits" (e.g. early queen excursions, wandering pieces, uncastled king, pawn storms, frequent checks, trades).
+2. Truthfulness: Never invent pieces lost, checks, captures, or sacrifices not stated in the evidence. Ground your words strictly in the provided chess facts.
+3. Observation: 1-2 atmospheric sentences (under 240 chars) vividly describing the detected player habit.
+4. Taunt: 1 sharp, biting sentence (under 180 chars) mocking this specific strategic flaw in your persona's distinctive voice.
+5. Tip: 1 concise sentence (under 180 chars) that counters or corrects the observed habit; or null if no habit.
+6. Format: Return RAW JSON ONLY with keys "observation", "taunt", "tip". No extra commentary or markdown fences.`;
 }
 
 /**
@@ -223,6 +234,10 @@ export function buildGemmaUserPrompt(context: RivalContext): string {
     (h) => `${h.title}: ${h.description} (evidence: ${h.evidence.join("; ")})`
   );
 
+  const primaryHabit = context.profile.insights[0]
+    ? `${context.profile.insights[0].title}: ${context.profile.insights[0].description}`
+    : "No dominant habits identified.";
+
   const payload = {
     rivalName: context.rivalName,
     difficulty: context.difficulty,
@@ -231,6 +246,7 @@ export function buildGemmaUserPrompt(context: RivalContext): string {
     lastPlayerMove: context.lastPlayerMoveSan ?? null,
     isCheck: Boolean(context.isCheck),
     outcome: context.outcome ?? "ongoing",
+    primaryHabit,
     observedHabits:
       habitSummaries.length > 0
         ? habitSummaries
@@ -275,6 +291,56 @@ export class GemmaDialogueProvider implements DialogueProvider {
 
   getLastError(): string | null {
     return this.lastError;
+  }
+
+  /**
+   * Fast health probe against Ollama (GET /api/tags, ~20-50ms).
+   * Distinguishes whether Ollama is completely offline, whether the model
+   * needs downloading, or whether it is available and ready.
+   */
+  async checkAvailability(): Promise<{
+    available: boolean;
+    modelFound: boolean;
+    models: string[];
+    error?: string;
+  }> {
+    if (typeof import.meta !== "undefined" && import.meta.env?.VITE_IS_HOSTED === "true") {
+      return {
+        available: false,
+        modelFound: false,
+        models: [],
+        error: "Hosted Static Deployment — Local Ollama probing disabled to protect visitor privacy.",
+      };
+    }
+
+    const base = this.config.endpointUrl.replace(/\/api\/generate\/?$/, "");
+    try {
+      const res = await fetch(`${base}/api/tags`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (!res.ok) {
+        return {
+          available: false,
+          modelFound: false,
+          models: [],
+          error: `HTTP ${res.status}: ${res.statusText}`,
+        };
+      }
+      const data = (await res.json()) as { models?: Array<{ name: string; model?: string }> };
+      const modelNames = (data.models || []).map((m) => m.name);
+      const target = this.config.modelName;
+      const modelFound = modelNames.some(
+        (n) => n === target || n.startsWith(`${target}:`) || target.startsWith(`${n}:`)
+      );
+      return { available: true, modelFound, models: modelNames };
+    } catch (err: unknown) {
+      return {
+        available: false,
+        modelFound: false,
+        models: [],
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   /**
@@ -330,6 +396,16 @@ export class GemmaDialogueProvider implements DialogueProvider {
       };
     }
 
+    // Hosted static deployment safeguard: Never attempt localhost network requests from visitors' browsers
+    if (typeof import.meta !== "undefined" && import.meta.env?.VITE_IS_HOSTED === "true") {
+      const templateInsight = generateTemplateInsight(context);
+      return {
+        insight: validateRivalInsight(templateInsight, "template"),
+        status: "idle",
+        error: "Hosted Static Deployment: Real-time inference requires local Ollama (disabled in hosted static build).",
+      };
+    }
+
     this.status = "loading";
 
     const timeoutController = new AbortController();
@@ -355,7 +431,8 @@ export class GemmaDialogueProvider implements DialogueProvider {
         stream: false,
         options: {
           temperature: 0.7,
-          num_predict: 160,
+          // 256 tokens allows complete JSON generation without truncated closing braces
+          num_predict: 256,
         },
       };
 

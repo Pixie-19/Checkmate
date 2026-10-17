@@ -86,7 +86,16 @@ export function checkHallucinations(
   }
 
   const combined = `${dialogue.observation} ${dialogue.taunt} ${dialogue.tip ?? ""}`.toLowerCase();
-  const flagged = antiKeywords.filter((word) => combined.includes(word.toLowerCase()));
+  const flagged = antiKeywords.filter((word) => {
+    const lowerWord = word.toLowerCase().trim();
+    if (!lowerWord) return false;
+    // Special case for "castled": "uncastled" describes the exact uncastled condition
+    // and must not be flagged as a hallucinated claim that the king castled.
+    if (lowerWord === "castled") {
+      return /\b(?<!un)castled\b/i.test(combined);
+    }
+    return combined.includes(lowerWord);
+  });
 
   return {
     flagged,

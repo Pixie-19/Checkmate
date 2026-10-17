@@ -140,8 +140,6 @@ async function runEvaluation() {
 
     const t0 = Date.now();
     let rawJson: unknown;
-    let isSuccess = false;
-    let schemaReason: string | undefined;
 
     try {
       const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
@@ -155,7 +153,7 @@ async function runEvaluation() {
           stream: false,
           options: {
             temperature: 0.7,
-            num_predict: 160,
+            num_predict: 256,
           },
         }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -182,11 +180,9 @@ async function runEvaluation() {
       const validation = validateModelDialogue(rawJson);
 
       if (!validation.isValid || !validation.cleaned) {
-        schemaReason = validation.reason;
         throw new Error(validation.reason || "Schema validation failed");
       }
 
-      isSuccess = true;
       const evalResult = evaluateScenarioResult(
         scenario,
         {
@@ -243,8 +239,10 @@ async function runEvaluation() {
   console.log(`Latency (Mean / Med):   ${report.latency.meanMs}ms / ${report.latency.medianMs}ms [Min: ${report.latency.minMs}ms, Max: ${report.latency.maxMs}ms]`);
   console.log("==================================================================\n");
 
-  // Save JSON report
-  const docsDir = path.resolve(process.cwd(), "docs");
+  // Save JSON report into repository docs directory
+  const rootDocs = path.resolve(process.cwd(), "..", "docs");
+  const isSubdir = await fs.stat(rootDocs).then((s) => s.isDirectory()).catch(() => false);
+  const docsDir = isSubdir ? rootDocs : path.resolve(process.cwd(), "docs");
   await fs.mkdir(docsDir, { recursive: true });
 
   const jsonOutputPath = path.join(docsDir, "eval-results.json");

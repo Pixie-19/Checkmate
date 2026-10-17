@@ -29,7 +29,7 @@ export interface ChessPieceProps extends HTMLAttributes<HTMLSpanElement> {
   className?: string;
 }
 
-export const MATERIAL_CHESS_SYMBOLS: Record<PieceType, string> = {
+const MATERIAL_CHESS_SYMBOLS: Record<PieceType, string> = {
   k: "chess_king_2",
   q: "chess_queen",
   r: "chess_rook",
@@ -38,7 +38,7 @@ export const MATERIAL_CHESS_SYMBOLS: Record<PieceType, string> = {
   p: "chess_pawn",
 };
 
-export const UNICODE_CHESS_FALLBACKS: Record<PieceColor, Record<PieceType, string>> = {
+const UNICODE_CHESS_FALLBACKS: Record<PieceColor, Record<PieceType, string>> = {
   w: {
     k: "♔",
     q: "♕",

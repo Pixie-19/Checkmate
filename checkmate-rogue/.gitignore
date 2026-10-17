@@ -14,6 +14,12 @@ dist
 dist-ssr
 *.local
 
+# Evaluation generated artifacts
+eval-results.json
+**/eval-results.json
+HUMAN_REVIEW_WORKSHEET.md
+**/HUMAN_REVIEW_WORKSHEET.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -19,10 +19,12 @@ Rather than claiming unverified AI capabilities, this report documents **empiric
 | **Model Inference Rate** | 14 / 14 (100%) | All scenarios with active habits triggered model inference |
 | **Deterministic Fallback Rate** | 2 / 2 (100%) | Scenarios with insufficient evidence (< 3 moves) or 0 habits bypassed model |
 | **Strict Schema Adherence** | **100.0%** | Non-empty observation, taunt, and tip conforming to character limits |
-| **Behavioral Grounding Rate** | **87.5%** | Model response directly references observed player habits |
-| **Hallucination-Free Rate** | **93.8%** | Model avoids inventing phantom moves, captures, or unmade sacrifices |
-| **Inference Latency (Mean)** | **1,537 ms** | Average generation time on consumer GPU/CPU |
-| **Inference Latency (Median)** | **1,521 ms** | Min: 1,193 ms · Max: 2,010 ms |
+| **Behavioral Grounding Rate** | **93.8%** | Model response directly references observed player habits (heuristic match) |
+| **Hallucination-Free Rate** | **93.8%** | Model avoids inventing phantom moves, captures, or unmade sacrifices (heuristic match) |
+| **Inference Latency (Mean)** | **1,334 ms** | Average generation time on warm local execution |
+| **Inference Latency (Median)** | **1,284 ms** | Min: 1,006 ms · Max: 1,782 ms |
+
+> **Evaluation Methodology Note**: Behavioral grounding and hallucination-free rates are measured using deterministic heuristic string and keyword boundary matchers over extracted telemetry plies, providing objective, reproducible bounds across model generations.
 
 ---
 
@@ -40,12 +42,12 @@ Rather than claiming unverified AI capabilities, this report documents **empiric
 {
   "model": "gemma2:2b",
   "system": "<Gothic persona directive with strict grounding rules>",
-  "prompt": "<Minimal JSON behavior context>",
+  "prompt": "<Minimal JSON behavior context with primaryHabit>",
   "format": "json",
   "stream": false,
   "options": {
     "temperature": 0.7,
-    "num_predict": 160
+    "num_predict": 256
   }
 }
 ```
@@ -86,7 +88,7 @@ The evaluation dataset (`src/ai/eval/evaluationDataset.ts`) defines 16 scenarios
 
 ## 3. Real Verified Gemma 2 Outputs
 
-These responses were genuinely captured from local Ollama execution during the automated benchmark run:
+These responses were captured from local Ollama execution during the automated benchmark run:
 
 ### Scenario SCN-01: Isolated Early Queen Development
 - **Player Moves**: `1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. d3 d6`
@@ -156,9 +158,9 @@ These responses were genuinely captured from local Ollama execution during the a
 
 ---
 
-## 4. Prompt Engineering Improvements
+## 4. Prompt Architecture & Guardrails
 
-During initial testing, small language models like `gemma2:2b` occasionally defaulted to generic chess tropes (e.g. hallucinating that the player "sacrificed a bishop" or "lost rooks"). 
+During development, small language models like `gemma2:2b` occasionally defaulted to generic chess tropes (e.g. hallucinating that the player "sacrificed a bishop" or "lost rooks").
 
 We refined the system prompt (`src/ai/dialogueProvider.ts`) with three explicit guardrails:
 
@@ -168,27 +170,30 @@ We refined the system prompt (`src/ai/dialogueProvider.ts`) with three explicit 
    - *The Crown Keeper*: Imperious monarch on the high throne; scorns challenger insolence with royal grandeur.
 2. **Explicit Anti-Hallucination Directive**:
    `"Grounding: Explicitly address the specific player habit named in 'observedHabits'. Never invent moves, captures, checks, or piece sacrifices not stated."`
-3. **Resilient JSON Cleaning**:
-   Added `cleanJsonText` to strip markdown fences (` ```json `) and case-resilient key lookups (`Observation`, `observations`).
+3. **Resilient JSON Sanitization**:
+   Implemented `cleanJsonText` to extract clean JSON substrings between the first `{` and last `}`, discarding extraneous model commentary or markdown code fences.
 
 ---
 
 ## 5. Visual Demonstration: Gemma Lab Inspector
 
-To make the Gemma integration inspectable for hackathon judges, Checkmate Rogue includes an in-app **Gemma Lab** modal:
+Checkmate Rogue includes an in-app **Gemma Lab** inspector (`/#lab`):
 
 1. Click the **Gemma Lab** button in the top navigation bar.
-2. Select any of the 16 evaluation scenarios from the dropdown.
-3. Observe the three-stage pipeline in real time:
-   - **Step 1**: Move history and deterministic habit detection with confidence ratings.
-   - **Step 2**: The minimal, privacy-safe JSON payload sent to Gemma.
-   - **Step 3**: Live inference execution against local Ollama with latency measurement, schema verification, and grounding checks.
+2. Select any of the 16 evaluation scenarios or use scenario comparison mode.
+3. Observe the pipeline in real time:
+   - **Step 1**: Move history and deterministic habit detection chips.
+   - **Step 2**: Detected behavior telemetry signals.
+   - **Step 3**: The minimal, privacy-safe JSON payload sent to Gemma (~185 tokens).
+   - **Step 4**: Live inference execution against local Ollama with latency measurement.
+   - **Step 5**: Structured rival response with verified source badge.
+   - **Step 6**: Heuristic evaluation metrics (schema validity, grounding pass, anti-hallucination check).
 
 ![Gemma Lab Inspector](screenshots/gemma-lab.png)
 
 ---
 
-## 6. How to Reproduce the Benchmark
+## 6. Reproducing the Benchmark
 
 Run the automated evaluation harness locally:
 
@@ -199,18 +204,18 @@ ollama pull gemma2:2b
 
 ### Step 2: Execute the Benchmark Harness
 ```bash
-cd Checkmate/checkmate-rogue
+cd checkmate-rogue
 npm run eval:gemma
 ```
 
-### Output Files Generated:
-- `docs/eval-results.json`: Full machine-readable benchmark report with per-scenario latencies and outputs.
-- `docs/HUMAN_REVIEW_WORKSHEET.md`: Markdown worksheet with review cards for human qualitative evaluation.
+### Local Artifacts Generated:
+- `docs/eval-results.json`: Machine-readable benchmark report with per-scenario latencies and outputs (local inspection artifact, excluded from Git).
+- `docs/HUMAN_REVIEW_WORKSHEET.md`: Markdown review worksheet with cards for human qualitative evaluation (local inspection artifact, excluded from Git).
 
 ---
 
-## 7. Known Limitations
+## 7. Limitations & Edge Cases
 
-1. **Local Hardware Dependency**: Latency varies between GPU-accelerated setups (~1.2s to 1.8s) and CPU-only systems (~4s to 8s).
+1. **Local Hardware Dependency**: Latency varies between GPU-accelerated environments (~1.0s to 1.8s) and CPU-only systems (~4s to 8s).
 2. **Zero-Shot Prompting**: Gemma 2 2B operates in zero-shot in-context mode. It does not update model weights permanently during gameplay.
 3. **Hosted Build Safeguard**: In public static deployments (`VITE_IS_HOSTED=true`), Gemma inference controls are hidden to prevent cross-origin localhost probing against visitors' computers.

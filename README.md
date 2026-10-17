@@ -24,10 +24,10 @@ A gothic chess roguelike where your opponents don't just challenge your moves �
 
 ## 🏆 Built for Best Use of Gemma
 
-Checkmate Rogue was submitted for the **Best Use of Gemma** category in the Hacktoberfest 2026 Open-Source AI Challenge.
+Checkmate Rogue is an open-source gothic chess roguelike built for the **Best Use of Gemma** category in the Hacktoberfest 2026 Open-Source AI Challenge.
 
 > 📊 **Empirical Quality Report**: We built an automated benchmark suite (`npm run eval:gemma`) evaluating 16 legal chess scenarios against local `gemma2:2b`.
-> Read the complete findings in **[docs/GEMMA_EVALUATION.md](docs/GEMMA_EVALUATION.md)** (**100% schema valid**, **87.5% grounded**, **93.8% hallucination-free**, **1,537ms mean latency**).
+> Read the complete findings in **[docs/GEMMA_EVALUATION.md](docs/GEMMA_EVALUATION.md)** (**100% schema valid**, **93.8% grounded**, **93.8% hallucination-free**, **1,334ms mean latency**).
 
 | Evaluation Metric | Checkmate Rogue Implementation |
 |---|---|
@@ -36,8 +36,8 @@ Checkmate Rogue was submitted for the **Best Use of Gemma** category in the Hack
 | **Grounding Strategy** | Pure heuristic feature extraction: chess move histories are distilled into deterministic behavioral signals before prompting |
 | **Structured Output** | Strict JSON schema enforcement (`{ observation, taunt, tip }`) validated by runtime length and content guards |
 | **Gameplay Separation** | Generative AI is strictly decoupled from move calculation: Stockfish 19 Lite WASM decides moves; Gemma provides psychological atmosphere |
-| **Graceful Fallback** | Honest, seamless fallback to offline deterministic script templates if Ollama is uninstalled, sleeping, or times out (>4000ms) |
-| **Interactive Inspector** | In-app **Gemma Lab** modal for judges to test scenarios, inspect payloads, and measure live inference |
+| **Graceful Fallback** | Honest, seamless fallback to offline deterministic script templates if Ollama is uninstalled, sleeping, or times out (>10,000ms) |
+| **Interactive Inspector** | In-app **Gemma Lab** modal with 6-step guided walkthrough and scenario comparison mode |
 
 ---
 
@@ -306,7 +306,7 @@ Default `.env.local` settings:
 ```env
 VITE_OLLAMA_ENDPOINT=http://127.0.0.1:11434/api/generate
 VITE_OLLAMA_MODEL=gemma2:2b
-VITE_OLLAMA_TIMEOUT_MS=4000
+VITE_OLLAMA_TIMEOUT_MS=10000
 ```
 
 Start the Vite development server:
@@ -349,13 +349,28 @@ Open `http://localhost:5173` in your browser.
 ```
 
 ### Why Local Gemma is Disabled in Static Builds
-Public static hosts (GitHub Pages, Netlify, Cloudflare Pages) cannot and should not attempt network connections to a random website visitor's `http://127.0.0.1:11434`.
+Public static hosts (Render, GitHub Pages, Netlify) cannot and should not attempt network connections to a website visitor's `http://127.0.0.1:11434`.
 
 When building for static deployment:
 ```bash
 VITE_IS_HOSTED=true npm run build
 ```
-The game cleanly hides the Local Gemma toggle, eliminates all outbound localhost requests, and serves deterministic scripted dialogue.
+The game cleanly hides the Local Gemma toggle, eliminates all outbound localhost requests, and serves deterministic scripted dialogue during gameplay. In **Gemma Lab**, visitors can explore the full telemetry extraction pipeline, prompt architecture, and benchmark findings without probing their local machine.
+
+### Deploying to Render (Free Static Site)
+
+Checkmate Rogue includes a pre-configured [`render.yaml`](render.yaml) blueprint:
+
+1. **Service Type:** Static Site (Free tier)
+2. **Repository:** `https://github.com/Pixie-19/Checkmate`
+3. **Root Directory:** `checkmate-rogue`
+4. **Build Command:** `npm ci && npm run build`
+5. **Publish Directory:** `dist`
+6. **Environment Variable:** `VITE_IS_HOSTED=true`
+
+In the Render Dashboard:
+- Click **New +** → **Blueprint** and select this repository (or create a **Static Site** with the settings above).
+- Render automatically applies the root directory, build command, security headers, and single-page application rewrites.
 
 ### Future Hosted Inference Architecture
 For public web deployments seeking cloud-driven Gemma inference, a recommended architecture utilizes:
@@ -473,7 +488,7 @@ dist/assets/index-DjORXq0j.js   308.79 kB │ gzip: 97.60 kB
 - [x] Three-heart roguelike campaign progression with 3 unique rivals.
 - [x] Relic system with functional abilities (Oracle's Debt, Fortress Pact, Knight's Echo).
 - [x] Robust Blob Worker loader resilient against COOP/COEP cross-origin header conflicts.
-- [x] 88 passing automated tests in Vitest.
+- [x] 111 passing automated tests in Vitest.
 
 ### In Progress & Future Milestones
 - [ ] **Hosted Cloud Gemma**: Serverless Google Cloud Vertex AI proxy for public hosted builds.

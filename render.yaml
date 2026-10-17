@@ -1,0 +1,35 @@
+# ==============================================================================
+# Render Static Site Blueprint — Checkmate Rogue
+# https://render.com/docs/blueprint-spec
+#
+# Free Static Site deployment for Hacktoberfest 2026.
+# Build command installs locked dependencies and bundles production assets.
+# ==============================================================================
+
+services:
+  - type: web
+    name: checkmate-rogue
+    runtime: static
+    rootDir: checkmate-rogue
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_IS_HOSTED
+        value: "true"
+    headers:
+      - path: /*
+        name: Cross-Origin-Opener-Policy
+        value: same-origin
+      - path: /*
+        name: Cross-Origin-Embedder-Policy
+        value: require-corp
+      - path: /*
+        name: Cross-Origin-Resource-Policy
+        value: cross-origin
+      - path: /engine/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

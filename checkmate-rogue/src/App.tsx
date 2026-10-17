@@ -137,20 +137,15 @@ export default function App() {
 
   // Dialogue provider and mode selection.
   // In hosted mode, always use scripted to avoid requests to a visitor's localhost.
-  const [dialogueMode, setDialogueMode] = useState<"scripted" | "gemma">("scripted");
+  const [dialogueMode, setDialogueModeState] = useState<"scripted" | "gemma">("scripted");
+  const setDialogueMode = useCallback((mode: "scripted" | "gemma") => {
+    if (IS_HOSTED && mode !== "scripted") return;
+    setDialogueModeState(mode);
+  }, []);
   const [gemmaStatus, setGemmaStatus] = useState<GemmaConnectionStatus>("idle");
 
   const templateProvider = useMemo(() => new TemplateDialogueProvider(), []);
   const gemmaProvider = useMemo(() => new GemmaDialogueProvider(), []);
-
-  // Hosted-mode guard: if IS_HOSTED, force scripted and keep it there.
-  // This runs synchronously after state initialization so no network request
-  // from a visitor's machine ever reaches localhost Ollama.
-  useEffect(() => {
-    if (IS_HOSTED && dialogueMode !== "scripted") {
-      setDialogueMode("scripted");
-    }
-  }, [dialogueMode]);
 
   // How-to-Play modal: shown automatically to first-time visitors (session-scoped).
   const [showHelp, setShowHelp] = useState<boolean>(() => {
@@ -296,7 +291,8 @@ export default function App() {
 
     return () => {
       active = false;
-      generationRef.current++;
+      const gen = generationRef;
+      gen.current++;
       engine.dispose();
       if (engineRef.current === engine) {
         engineRef.current = null;
@@ -486,16 +482,20 @@ export default function App() {
     };
 
     if (dialogueMode === "scripted") {
-      setGemmaStatus("idle");
       const insight = templateProvider.generateInsightSync(context);
-      setRivalInsight(insight);
+      queueMicrotask(() => {
+        setGemmaStatus("idle");
+        setRivalInsight(insight);
+      });
       return;
     }
 
     // Local Gemma mode: asynchronous inference with truthful status & fallback
     const abortController = new AbortController();
     dialogueAbortControllerRef.current = abortController;
-    setGemmaStatus("loading");
+    queueMicrotask(() => {
+      setGemmaStatus("loading");
+    });
 
     gemmaProvider
       .generateInsightWithDetails(context, { signal: abortController.signal })
@@ -549,50 +549,52 @@ export default function App() {
       topInsightIds: profile.insights.map((i) => i.id),
     };
 
-    if (game.isCheckmate()) {
-      // turn() returns the side TO MOVE — in checkmate, that side has LOST.
-      if (game.turn() === "b") {
-        // Black is in checkmate → White (player) wins.
-        encounterResultRef.current = "win";
-        setCampaign((c) => {
-          const updated = recordEncounterBehavior(recordWin(c), {
-            ...baseRecord,
-            outcome: "win",
+    queueMicrotask(() => {
+      if (game.isCheckmate()) {
+        // turn() returns the side TO MOVE — in checkmate, that side has LOST.
+        if (game.turn() === "b") {
+          // Black is in checkmate → White (player) wins.
+          encounterResultRef.current = "win";
+          setCampaign((c) => {
+            const updated = recordEncounterBehavior(recordWin(c), {
+              ...baseRecord,
+              outcome: "win",
+            });
+            // Only show relic choice if the campaign is continuing (active).
+            // If the final rival was defeated, status is "victory" and Run Complete modal displays.
+            if (updated.status === "active") {
+              setShowRelicChoice(true);
+            }
+            return updated;
           });
-          // Only show relic choice if the campaign is continuing (active).
-          // If the final rival was defeated, status is "victory" and Run Complete modal displays.
-          if (updated.status === "active") {
-            setShowRelicChoice(true);
-          }
-          return updated;
-        });
+        } else {
+          // White is in checkmate → Black (rival) wins → player loses.
+          encounterResultRef.current = "loss";
+          setCampaign((c) => {
+            const updated = recordEncounterBehavior(recordLoss(c), {
+              ...baseRecord,
+              outcome: "loss",
+            });
+            // Show loss result modal only if player still has hearts remaining.
+            // If zero hearts remain, status is "defeat" and Run Complete modal displays.
+            if (updated.status === "active") {
+              setShowLossResult(true);
+            }
+            return updated;
+          });
+        }
       } else {
-        // White is in checkmate → Black (rival) wins → player loses.
-        encounterResultRef.current = "loss";
-        setCampaign((c) => {
-          const updated = recordEncounterBehavior(recordLoss(c), {
+        // Draw of any kind.
+        encounterResultRef.current = "draw";
+        setCampaign((c) =>
+          recordEncounterBehavior(c, {
             ...baseRecord,
-            outcome: "loss",
-          });
-          // Show loss result modal only if player still has hearts remaining.
-          // If zero hearts remain, status is "defeat" and Run Complete modal displays.
-          if (updated.status === "active") {
-            setShowLossResult(true);
-          }
-          return updated;
-        });
+            outcome: "draw",
+          })
+        );
+        setShowDrawResult(true);
       }
-    } else {
-      // Draw of any kind.
-      encounterResultRef.current = "draw";
-      setCampaign((c) =>
-        recordEncounterBehavior(c, {
-          ...baseRecord,
-          outcome: "draw",
-        })
-      );
-      setShowDrawResult(true);
-    }
+    });
   }, [game, rivalIndex, rivalName]);
 
   // ---------------------------------------------------------------------------

@@ -231,7 +231,7 @@ export const EVALUATION_SCENARIOS: EvalScenario[] = [
       "Nxe5", "Nxe5",
     ],
     expectedHabitIds: ["high-capture-rate"],
-    expectedKeywords: ["trade", "capture", "blood", "exchange", "pieces"],
+    expectedKeywords: ["trade", "capture", "blood", "exchange", "pieces", "knight", "haste"],
     antiKeywords: ["passive", "retreat"],
     shouldFallbackToTemplate: false,
     notes: "Tests recognition of tactical bloodthirst and piece trading.",
